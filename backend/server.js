@@ -70,6 +70,42 @@ app.post('/api/auth/login',async(req,res)=>{
         })
     }
 })
+
+app.get('/api/:userId',async(req,res,next)=>{
+    try{
+        const user = await User.findById(req.params.userId).select('username keys');
+        if(!user) {
+            return res.status(404).json({status:'failure',message:'User not found'});
+        }
+        if(!user.keys || !user.keys.preKeys) {
+            return res.status(400).json({
+                status:'failure',
+                message:'User has no keys setup'
+            })
+        }
+        const preKey = user.keys.preKeys.length>0?user.keys.preKeys.shift():null;//remove the prekey after usage thats why shift used here
+        if(!preKey) {
+            return res.status(400).json({status:'failure',message:'no available pre key'});
+        } 
+        user.markModified('keys.preKeys');
+        await user.save();
+        res.status(200).json({
+            username:user.username,
+            identityKey:user.keys.identityKey,
+            signedPreKey:user.keys.signedPreKey,
+            preKey
+        });
+    }catch(err) {
+        return res.status(500).json({
+            status:'failure',
+            message:'internal server error',
+            error:err.message
+        })
+    }
+})
+
+
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({server});
 //online clients map-> userid->set<WebSocket> {supports multi-device/sessions}
