@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>WS Chat Test</title>
+  <style>
+    body { font-family: sans-serif; }
+    #log { height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 5px; }
+    input, button { margin: 5px 0; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat Test</h1>
+  <label>JWT Token:</label><br>
+  <input type="text" id="token" size="80" placeholder="Paste your JWT token"><br>
+  <button onclick="connect()">Connect</button>
+
+  <h3>Messages</h3>
+  <div id="log"></div>
+
+  <h3>Send Message</h3>
+  <label>To (receiver _id):</label><br>
+  <input type="text" id="to" size="40" placeholder="Receiver User ID"><br>
+  <label>Content:</label><br>
+  <input type="text" id="content" size="40" placeholder="Message"><br>
+  <button onclick="sendMessage()">Send</button>
+
+  <script>
+    let ws;
+
+    function log(msg) {
+      const logDiv = document.getElementById('log');
+      logDiv.innerHTML += msg + '<br>';
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function connect() {
+      const token = document.getElementById('token').value.trim();
+      if (!token) return alert("Please enter a token");
+
+      ws = new WebSocket(`ws://localhost:3000/?token=${token}`);
+
+      ws.onopen = () => log("✅ Connected to server");
+      ws.onclose = () => log("❌ Disconnected");
+      ws.onerror = (err) => log("⚠️ Error: " + err.message);
+      ws.onmessage = (msg) => {
+        log(`📩 Received: ${msg.data}`);
+      };
+    }
+
+    function sendMessage() {
+      const to = document.getElementById('to').value.trim();
+      const content = document.getElementById('content').value.trim();
+      if (!to || !content) return alert("Please fill both fields");
+
+      const payload = {
+        type: "SEND_MESSAGE",
+        to,
+        content
+      };
+      ws.send(JSON.stringify(payload));
+      log(`📤 Sent: ${JSON.stringify(payload)}`);
+    }
+  </script>
+</body>
+</html>
