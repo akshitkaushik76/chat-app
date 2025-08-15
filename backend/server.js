@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const WebSocket = require('ws');
 const User = require('./models/User');
 const Message = require('./models/Message');
-
+const {requireAuth} = require('./Middlewares/auth');
 
 mongoose.connect(process.env.mongo_url,{
 }).then((conn)=>console.log('connected to database'))
@@ -104,7 +104,78 @@ app.get('/api/:userId',async(req,res,next)=>{
     }
 })
 
+app.get('/direct/:otherUserId',requireAuth,async(req,res,next)=>{
+    try{
+        const myId = req.user.userId.toString();
+        const otherId = req.params.otherUserId;
+        if(!mongoose.isValidObjectId(otherId)) {
+            return res.status(400).json({
+                status:'failure',
+                message:'the user id is invalid,please try with correct user'
+            })
+        }
+        const lim = Math.min(parseInt(req.query.lim || '50',10),100);
+        const before = req.query.before? new Date(req.query.before):null;
+        const query = {
+            $or:[
+                {sender:myId,receiver:otherId},
+                {sender:otherId,receiver:myId}
+            ]
+        };
+        if(before && !isNaN(before.getTime())) {
+            query.createdAt = {$lt:before};
+        }
 
+        const docs = await Message.find(query).sort({createdAt:-1}).limit(lim);
+        
+        const messages = docs.map(serializeMessage);
+        const nextCursor = messages.length ? messages[messages.length-1].sentAt || docs[docs.length-1].createdAt:null;
+        return res.status(201).json({
+            status:'success',
+            count:messages.length,
+            nextCursor:nextCursor?new Date(nextCursor).toISOString():null,
+            messages
+        });
+    } catch(error) {
+        res.status(500).json({
+            status:'failure',
+            error:error.message
+        })
+    }
+})
+
+app.get('/group/:groupId',requireAuth,async(req,res,next)=>{
+      try{
+        const groupId = req.params.groupId;
+        if(!mongoose.isValidObjectId(groupId)) {
+            return res.status(400).json({status:'failure',message:'group does not exist'});
+        }
+        const lim = Math.min(parseInt(req.query.lim || '50',10),100);
+        const before = req.query.before? new Date(req.query.before) : null;
+
+        const query = {group:groupId};
+        if(before && !isNaN(before.getTime())) {
+            query.createdAt = {$lt:before};
+        }
+
+        const docs  = await Message.find(query).sort({createdAt:-1}).limit(lim);
+        const messages = docs.map(serializeMessage);
+
+        const nextCursor = messages.length?messages[messages.length-1].sentAt || docs[docs.length-1].createdAt:null 
+
+        return res.status(201).json({
+            status:'success',
+            count:messages.length,
+            nextCursor:nextCursor ? new Date(nextCursor).toISOString():null,
+            messages
+        })
+      } catch(error) {
+         res.status(500).json({
+            status:'failure',
+            error:error.message
+         })
+      }
+})
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({server});
@@ -201,9 +272,13 @@ wss.on('connection',async(ws,req)=>{
 
         switch(data.type) {
             case 'SEND_MESSAGE':{
-                const {to,content} = data;
-                if(!to || !content || typeof content!== 'string') {
+                const {to,ciphertext} = data;
+                if(!ciphertext ||  typeof content!== 'string'||ciphertext.trim() === ' ') {
                     return ws.send(JSON.stringify({type:'ERROR',message:'to and content are required'}));
+                }
+                
+                if(!to) {
+                    return ws.send(JSON.stringify({type:'ERROR',message:'Reciever id is required'}));
                 }
 
                 const receiverOnline = !!clients.get(to);
@@ -279,7 +354,7 @@ function serializeMessage(m) {
     sender: m.sender,
     receiver: m.receiver || null,
     group: m.group || null,
-    content: m.content,            // later: encrypted blob
+    ciphertext: m.content,            // later: encrypted blob
     status: m.status,
     sentAt: m.sentAt,
     deliveredAt: m.deliveredAt || null,

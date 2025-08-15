@@ -14,9 +14,16 @@ const MessageSchema = new mongoose.Schema({
         type:mongoose.Schema.Types.ObjectId,
         ref:'Group'
     },
-    content:{
+    ciphertext:{
         type:String,
         required:true
+    },
+    contenttype:{type:String,default:'text'},
+    envelope:{
+      version:{type:Number,default:1},
+      preKey:{type:Boolean,default:false},
+      oneTimePreKeyId:{type:Number},
+      deviceId:{type:Number}
     },
     status:{
         type:String,
@@ -27,10 +34,12 @@ const MessageSchema = new mongoose.Schema({
         type:Date,
         default:Date.now
     },
+    lastSeen:{type:Date,default:null},
     deliveredAt:Date,
     readAt:Date
 },{timestamps:true});
 
-MessageSchema.index({receiver:1,status:1});
+
+MessageSchema.index({receiver:1,status:1,createdAt:-1});
 
 module.exports = mongoose.model('Message',MessageSchema);
